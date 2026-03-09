@@ -89,6 +89,45 @@ Open `http://localhost:3000` in your browser.
                               └──────────────────────────────┘
 ```
 
+
+## Flow Architecture (How We Are Doing It)
+
+The application follows a modern decoupled architecture. Here is the high-level data flow when a user sends a message:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend (Next.js)
+    participant Backend (FastAPI)
+    participant Orchestrator
+    participant Database (SQLite)
+    participant Gemini AI
+    participant Google Search
+
+    User->>Frontend (Next.js): Sends message (Text or Voice)
+    Frontend (Next.js)->>Backend (FastAPI): POST /api/sessions/{id}/chat
+    Backend (FastAPI)->>Database (SQLite): Save user message & load history
+    Backend (FastAPI)->>Orchestrator: Pass context to active agent
+    Orchestrator->>Gemini AI: Request response (with full history & target agents)
+    
+    alt Agent needs live data
+        Gemini AI->>Google Search: Query for live market data (Investment Advisor only)
+        Google Search-->>Gemini AI: Search Results
+    end
+
+    Gemini AI-->>Orchestrator: Returns text (or a [TRANSFER: AgentName] marker)
+    
+    alt Agent decides to handoff
+        Orchestrator->>Database (SQLite): Update active agent ID for session
+        Orchestrator->>Gemini AI: Re-prompt new agent with context
+        Gemini AI-->>Orchestrator: New agent's response
+    end
+
+    Orchestrator->>Database (SQLite): Save final assistant response
+    Orchestrator-->>Frontend (Next.js): Return text, active agent details
+    Frontend (Next.js)-->>User: Display message & trigger Text-to-Speech
+```
+
 ## Pre-configured Agents
 
 | Agent | Role | Special Capabilities |
@@ -99,7 +138,6 @@ Open `http://localhost:3000` in your browser.
 
 ## How Routing Works
 
-Gemini 2.5 does not allow combining built-in tools (Google Search) with custom function declarations in the same request. To work around this:
 
 - **Agent routing** uses structured text markers (`[TRANSFER: AgentName]`) parsed by the backend — no function calling needed.
 - **Google Search** is passed as the sole tool for the Investment Advisor, enabling real-time market data grounding without conflicts.
